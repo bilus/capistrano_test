@@ -46,3 +46,4 @@ gem 'capistrano-rbenv', '~> 2.0'
 gem 'rspec-core', group: :test
 
 gem 'pg'
+gem 'unicorn'
