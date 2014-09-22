@@ -1,13 +1,18 @@
-set :application, 'app_name'
+set :application, 'capistrano_test'
 set :deploy_user, 'deploy'
 
 # setup repo details
 set :scm, :git
-set :repo_url, 'git@github.com:username/repo.git'
+set :repo_url, 'git@github.com:bilus/capistrano_test.git'
+set :branch, 'master'
+set :ssh_options, { forward_agent: true, paranoid: true, keys: "~/.ssh/id_rsa" }
+# set :ssh_options, {
+#   forward_agent: true
+# }
 
 # setup rbenv.
 set :rbenv_type, :system
-set :rbenv_ruby, '2.1.1'
+set :rbenv_ruby, '2.1.2'
 set :rbenv_prefix, "RBENV_ROOT=#{fetch(:rbenv_path)} RBENV_VERSION=#{fetch(:rbenv_ruby)} #{fetch(:rbenv_path)}/bin/rbenv exec"
 set :rbenv_map_bins, %w{rake gem bundle ruby rails}
 
@@ -22,7 +27,7 @@ set :linked_dirs, %w{bin log tmp/pids tmp/cache tmp/sockets vendor/bundle public
 
 # what specs should be run before deployment is allowed to
 # continue, see lib/capistrano/tasks/run_tests.cap
-set :tests, []
+set :tests, ["test"]
 
 # which config files should be copied by deploy:setup_config
 # see documentation in lib/capistrano/tasks/setup_config.cap
