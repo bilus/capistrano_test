@@ -102,7 +102,13 @@ namespace :deploy do
   
   # Generate database yml during the initial install.
   unless File.exist?("#{shared_path}/config/database.yml")
-    after 'deploy::setup_config', 'database:postgresql:database_yml'
+    set :postgresql_database, "#{fetch(:full_app_name)}_production"
+    set :postgresql_user, "#{fetch(:full_app_name)}_production_rw"
+    set :postgresql_password, SecureRandom.hex
+    set :postgresql_host, "localhost"
+    set :postgresql_pool_size, 5
+    
+    after 'deploy:setup_config', 'database:postgresql:database_yml'
   end
 
   # As of Capistrano 3.1, the `deploy:restart` task is not called

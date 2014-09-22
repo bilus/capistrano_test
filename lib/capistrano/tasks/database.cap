@@ -69,6 +69,8 @@ namespace :database do
       }
       fetch(:postgresql_password)
       on release_roles(:all) do
+        puts "Generating database.yml"
+        puts YAML.dump(yaml)
         put YAML.dump(yaml),
             "#{shared_path}/config/database.yml",
             :mode => "600"
