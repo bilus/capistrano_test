@@ -1,35 +1,24 @@
 namespace :database do
   namespace :postgresql do
-    desc "Update postgresql.conf using pgtune"
-    # task :tune do
-    #   privileged_on primary(:db), :in => :sequence do
-    #     pgtune_dir = "/tmp/pgtune"
-    #     pgtune_output = "/tmp/postgresql.conf.pgtune"
-    #     pg_conf = "/etc/postgresql/9.1/main/postgresql.conf"
-    #
-    #     execute :sudo, "rm", "-rf", pgtune_dir
-    #     execute :sudo, "git",
-    #             "clone",
-    #             "-q",
-    #             "https://github.com/gregs1104/pgtune.git",
-    #             pgtune_dir
-    #
-    #     execute "sudo #{pgtune_dir}/pgtune",
-    #             "--input-config", pg_conf,
-    #             "--output-config", pgtune_output,
-    #             "--type", "Web",
-    #             "--connections", fetch(:postgresql_max_connections)
-    #
-    #     # Log diff for informational purposes
-    #     execute :sudo, "diff", pg_conf, pgtune_output, "|| true"
-    #
-    #     execute :sudo, "cp", pgtune_output, pg_conf
-    #     execute :sudo, "service", "postgresql", "restart"
-    #   end
-    # end
+    def privileged_on(*args, &block)
+      on(*args) do |host|
+        if host.nil?
+          instance_exec(nil, nil, &block)
+        else
+          original_user = host.user
 
-    desc "Create user if it doesn't already exist"
-    task :create_user do
+          begin
+            host.user = host.properties.privileged_user ||
+                        fetch(:fiftyfive_privileged_user)
+            instance_exec(host, original_user, &block)
+          ensure
+            host.user = original_user
+          end
+        end
+      end
+    end
+    
+    def create_user
       privileged_on primary(:db) do
         user = fetch(:postgresql_user)
 
@@ -41,9 +30,15 @@ namespace :database do
         end
       end
     end
-
-    desc "Create database if it doesn't already exist"
-    task :create_database do
+    
+    def generate_database_yml
+      on roles(:db) do
+        puts "Overwriting database.yml"
+        smart_template "database.yml"
+      end
+    end
+    
+    def create_database
       privileged_on primary(:db) do
         user = fetch(:postgresql_user)
         db = fetch(:postgresql_database)
@@ -53,117 +48,18 @@ namespace :database do
         end
       end
     end
+    
+    
+    task :initialize_database do
+      set :postgresql_database, "#{fetch(:full_app_name)}_production"
+      set :postgresql_user, "#{fetch(:full_app_name)}_production_rw"
+      set :postgresql_password, SecureRandom.hex
+      set :postgresql_host, "localhost"
+      set :postgresql_pool_size, 5
 
-    desc "Generate database.yml"
-    task :database_yml do
-      yaml = {
-        fetch(:rails_env).to_s => {
-          "adapter" => "postgresql",
-          "encoding" => "unicode",
-          "database" => fetch(:postgresql_database).to_s,
-          "pool" => fetch(:postgresql_pool_size).to_i,
-          "username" => fetch(:postgresql_user).to_s,
-          "password" => fetch(:postgresql_password).to_s,
-          "host" => fetch(:postgresql_host).to_s
-        }
-      }
-      fetch(:postgresql_password)
-      on release_roles(:all) do
-        puts "Generating database.yml"
-        puts YAML.dump(yaml)
-        put YAML.dump(yaml),
-            "#{shared_path}/config/database.yml",
-            :mode => "600"
-      end
+      generate_database_yml
+      create_user
+      create_database
     end
-
-    # desc "Generate pgpass file (needed by backup scripts)"
-    # task :pgpass do
-    #   fetch(:postgresql_password)
-    #   on release_roles(:all) do
-    #     template "pgpass.erb",
-    #              fetch(:postgresql_pgpass_path),
-    #              :mode => "600"
-    #   end
-    # end
-
-    # desc "Configure logrotate to back up the database daily"
-    # task :logrotate_backup do
-    #   on roles(:backup) do
-    #     backup_path = fetch(:postgresql_backup_path)
-    #     execute :mkdir, "-p", File.dirname(backup_path)
-    #     execute :touch, backup_path
-    #   end
-    #
-    #   privileged_on roles(:backup) do |host, user|
-    #     template\
-    #       "postgresql-backup-logrotate.erb",
-    #       "/etc/logrotate.d/postgresql-backup-#{application_basename}",
-    #       :owner => "root:root",
-    #       :mode => "644",
-    #       :binding => binding,
-    #       :sudo => true
-    #   end
-    # end
-    #
-    # desc "Dump the database to FILE"
-    # task :dump do
-    #   on primary(:db) do
-    #     with_pgpassfile do
-    #       execute :pg_dump,
-    #         "-Fc -Z9 -O",
-    #         "-x", fetch(:postgresql_dump_options),
-    #         "-f", remote_dump_file,
-    #         connection_flags,
-    #         fetch(:postgresql_database)
-    #     end
-    #
-    #     download!(remote_dump_file, local_dump_file)
-    #
-    #     info(
-    #       "Exported #{fetch(:postgresql_database)} "\
-    #       "to #{local_dump_file}."
-    #       )
-    #   end
-    # end
-    #
-    # desc "Restore database from FILE"
-    # task :restore do
-    #   on primary(:db) do
-    #     exit 1 unless agree(
-    #       "\nErase existing #{fetch(:rails_env)} database "\
-    #       "and restore from local file: #{local_dump_file}? "
-    #       )
-    #
-    #     upload!(local_dump_file, remote_dump_file)
-    #
-    #     with_pgpassfile do
-    #       execute :pg_restore,
-    #         "-O -c",
-    #         connection_flags,
-    #         "-d", fetch(:postgresql_database),
-    #         remote_dump_file
-    #     end
-    #   end
-    # end
-    #
-    # def local_dump_file
-    #   ENV.fetch("FILE", "#{fetch(:postgresql_database)}.dmp")
-    # end
-    #
-    # def remote_dump_file
-    #   "/tmp/#{fetch(:postgresql_database)}.dmp"
-    # end
-    #
-    # def connection_flags
-    #   [
-    #     "-U", fetch(:postgresql_user),
-    #     "-h", fetch(:postgresql_host)
-    #   ].join(" ")
-    # end
-    #
-    # def with_pgpassfile(&block)
-    #   with(:pgpassfile => fetch(:postgresql_pgpass_path), &block)
-    # end
   end
 end
